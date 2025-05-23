@@ -54,6 +54,7 @@
         function GameApp() {
             const [currentUser, setCurrentUser] = useState(null);
             const [gameState, setGameState] = useState('loading'); // loading, character-select, game
+            const [roomInitialized, setRoomInitialized] = useState(false);
             const [activeTab, setActiveTab] = useState('world');
             const [playerData, setPlayerData] = useState({
                 health: 100,
@@ -70,21 +71,23 @@
                 location: 'downtown'
             });
             
-            // Multiplayer state
+            // Safe multiplayer state - only subscribe after room is initialized
             const players = useSyncExternalStore(
-                room.subscribePresence,
-                () => room.presence || {}
+                roomInitialized ? room.subscribePresence : () => () => {},
+                roomInitialized ? () => room.presence || {} : () => ({})
             );
             
             const worldState = useSyncExternalStore(
-                room.subscribeRoomState,
-                () => room.roomState || {}
+                roomInitialized ? room.subscribeRoomState : () => () => {},
+                roomInitialized ? () => room.roomState || {} : () => ({})
             );
             
             useEffect(() => {
                 async function initGame() {
                     try {
                         await room.initialize();
+                        setRoomInitialized(true);
+                        
                         const user = await window.websim.getCurrentUser();
                         setCurrentUser(user);
                         setGameState('character-select');
@@ -99,6 +102,7 @@
                         });
                     } catch (error) {
                         console.error('Failed to initialize game:', error);
+                        setGameState('error');
                     }
                 }
                 initGame();
@@ -122,12 +126,14 @@
                         skill.xpToNext = Math.floor(skill.xpToNext * 1.2);
                         
                         // Notify other players of level up
-                        room.send({
-                            type: 'levelUp',
-                            username: currentUser.username,
-                            skill: skillName,
-                            newLevel: skill.level
-                        });
+                        if (roomInitialized) {
+                            room.send({
+                                type: 'levelUp',
+                                username: currentUser.username,
+                                skill: skillName,
+                                newLevel: skill.level
+                            });
+                        }
                     }
                     
                     return { ...prev, skills: newSkills };
@@ -167,12 +173,14 @@
                 gainXP(recipe.skill, recipe.xpGain);
                 
                 // Broadcast crafting action
-                room.send({
-                    type: 'craftedItem',
-                    username: currentUser.username,
-                    item: recipe.name,
-                    location: playerData.location
-                });
+                if (roomInitialized) {
+                    room.send({
+                        type: 'craftedItem',
+                        username: currentUser.username,
+                        item: recipe.name,
+                        location: playerData.location
+                    });
+                }
             };
             
             const scavengeLocation = () => {
@@ -190,17 +198,28 @@
                 
                 gainXP('scavenging', 15);
                 
-                room.send({
-                    type: 'scavenged',
-                    username: currentUser.username,
-                    item: ITEMS[foundItem].name,
-                    quantity,
-                    location: playerData.location
-                });
+                if (roomInitialized) {
+                    room.send({
+                        type: 'scavenged',
+                        username: currentUser.username,
+                        item: ITEMS[foundItem].name,
+                        quantity,
+                        location: playerData.location
+                    });
+                }
             };
             
             if (gameState === 'loading') {
                 return <div className="loading">Connecting to Urban Legends Online...</div>;
+            }
+            
+            if (gameState === 'error') {
+                return (
+                    <div className="loading">
+                        <div>❌ Connection failed</div>
+                        <button onClick={() => window.location.reload()}>Retry</button>
+                    </div>
+                );
             }
             
             if (gameState === 'character-select') {
@@ -308,7 +327,7 @@
                         </div>
                     </div>
                     
-                    <GameFeed players={players} />
+                    {roomInitialized && <GameFeed players={players} />}
                 </div>
             );
         }
@@ -568,4 +587,3 @@
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
-
