@@ -50,7 +50,7 @@ body {
     border: 2px solid #ff6666;
     border-radius: 10px;
     padding: 3rem;
-    max-width: 600px;
+    max-width: 700px;
     width: 100%;
     text-align: center;
 }
@@ -88,6 +88,19 @@ body {
 .error-details li {
     margin-bottom: 0.5rem;
     line-height: 1.4;
+}
+
+.persistent-error {
+    background: rgba(255, 102, 102, 0.05);
+    padding: 1rem;
+    border-radius: 5px;
+    margin-top: 1rem;
+    border-left: 3px solid #ff6666;
+}
+
+.persistent-error h4 {
+    color: #ff9999;
+    margin-bottom: 0.5rem;
 }
 
 .error-actions {
@@ -176,6 +189,12 @@ body {
     margin-bottom: 2rem;
     color: #00ff00;
     font-size: 0.9rem;
+}
+
+.connection-details {
+    font-size: 0.8rem;
+    color: #ccc;
+    margin-top: 0.25rem;
 }
 
 .status-indicator {

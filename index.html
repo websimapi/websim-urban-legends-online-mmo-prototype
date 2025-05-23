@@ -13,7 +13,7 @@
     <div id="root"></div>
     
     <script type="text/babel">
-        const { useState, useEffect, useSyncExternalStore } = React;
+        const { useState, useEffect, useSyncExternalStore, useCallback, useRef } = React;
         
         // Initialize WebsimSocket for multiplayer
         let room = null;
@@ -50,42 +50,69 @@
             }
         };
         
-        // Safe subscription functions that handle undefined room states
-        const safeSubscribePresence = (callback) => {
-            if (room && room.subscribePresence && typeof room.subscribePresence === 'function') {
-                return room.subscribePresence(callback);
+        // Multiplayer store management
+        class MultiplayerStore {
+            constructor() {
+                this.presence = {};
+                this.roomState = {};
+                this.isConnected = false;
+                this.listeners = new Set();
+                this.presenceListeners = new Set();
+                this.roomStateListeners = new Set();
             }
-            return () => {}; // Return empty unsubscribe function
-        };
+            
+            updatePresence(newPresence) {
+                this.presence = newPresence;
+                this.presenceListeners.forEach(listener => {
+                    try {
+                        listener(this.presence);
+                    } catch (error) {
+                        console.error('Error in presence listener:', error);
+                    }
+                });
+            }
+            
+            updateRoomState(newRoomState) {
+                this.roomState = newRoomState;
+                this.roomStateListeners.forEach(listener => {
+                    try {
+                        listener(this.roomState);
+                    } catch (error) {
+                        console.error('Error in room state listener:', error);
+                    }
+                });
+            }
+            
+            subscribePresence(listener) {
+                this.presenceListeners.add(listener);
+                return () => this.presenceListeners.delete(listener);
+            }
+            
+            subscribeRoomState(listener) {
+                this.roomStateListeners.add(listener);
+                return () => this.roomStateListeners.delete(listener);
+            }
+            
+            getPresence() {
+                return this.presence;
+            }
+            
+            getRoomState() {
+                return this.roomState;
+            }
+        }
         
-        const safeGetPresence = () => {
-            if (room && room.presence) {
-                return room.presence;
-            }
-            return {};
-        };
-        
-        const safeSubscribeRoomState = (callback) => {
-            if (room && room.subscribeRoomState && typeof room.subscribeRoomState === 'function') {
-                return room.subscribeRoomState(callback);
-            }
-            return () => {};
-        };
-        
-        const safeGetRoomState = () => {
-            if (room && room.roomState) {
-                return room.roomState;
-            }
-            return {};
-        };
+        const multiplayerStore = new MultiplayerStore();
         
         // Game State Management
         function GameApp() {
             const [currentUser, setCurrentUser] = useState(null);
             const [gameState, setGameState] = useState('loading'); // loading, character-select, game, error
-            const [roomInitialized, setRoomInitialized] = useState(false);
             const [connectionError, setConnectionError] = useState(null);
             const [activeTab, setActiveTab] = useState('world');
+            const [connectionAttempts, setConnectionAttempts] = useState(0);
+            const initializationRef = useRef(false);
+            
             const [playerData, setPlayerData] = useState({
                 health: 100,
                 money: 100,
@@ -101,72 +128,136 @@
                 location: 'downtown'
             });
             
-            // Safe multiplayer state - only subscribe after room is initialized
+            // Safe multiplayer state hooks - only subscribe when connected
             const players = useSyncExternalStore(
-                roomInitialized ? safeSubscribePresence : () => () => {},
-                roomInitialized ? safeGetPresence : () => ({})
+                useCallback((listener) => {
+                    if (multiplayerStore.isConnected) {
+                        return multiplayerStore.subscribePresence(listener);
+                    }
+                    return () => {};
+                }, [multiplayerStore.isConnected]),
+                useCallback(() => {
+                    if (multiplayerStore.isConnected) {
+                        return multiplayerStore.getPresence();
+                    }
+                    return {};
+                }, [multiplayerStore.isConnected])
             );
             
             const worldState = useSyncExternalStore(
-                roomInitialized ? safeSubscribeRoomState : () => () => {},
-                roomInitialized ? safeGetRoomState : () => ({})
+                useCallback((listener) => {
+                    if (multiplayerStore.isConnected) {
+                        return multiplayerStore.subscribeRoomState(listener);
+                    }
+                    return () => {};
+                }, [multiplayerStore.isConnected]),
+                useCallback(() => {
+                    if (multiplayerStore.isConnected) {
+                        return multiplayerStore.getRoomState();
+                    }
+                    return {};
+                }, [multiplayerStore.isConnected])
             );
             
-            useEffect(() => {
-                async function initGame() {
-                    try {
-                        setGameState('loading');
-                        setConnectionError(null);
-                        
-                        // Check if WebsimSocket is available
-                        if (typeof WebsimSocket === 'undefined') {
-                            throw new Error('WebsimSocket is not available. This game requires WebSim multiplayer features.');
-                        }
-                        
-                        // Get current user first
-                        if (!window.websim || typeof window.websim.getCurrentUser !== 'function') {
-                            throw new Error('WebSim user system is not available.');
-                        }
-                        
-                        const user = await window.websim.getCurrentUser();
-                        if (!user || !user.username) {
-                            throw new Error('Unable to get user information.');
-                        }
-                        setCurrentUser(user);
-                        
-                        // Initialize room
-                        room = new WebsimSocket();
-                        await room.initialize();
-                        
-                        // Wait a moment for room to be fully ready
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                        // Verify room is properly initialized
-                        if (!room.updatePresence || typeof room.updatePresence !== 'function') {
-                            throw new Error('WebsimSocket failed to initialize properly.');
-                        }
-                        
-                        // Set room as initialized
-                        setRoomInitialized(true);
-                        
-                        // Set initial presence
-                        room.updatePresence({
-                            username: user.username,
-                            location: 'downtown',
-                            health: 100,
-                            level: calculateOverallLevel(playerData.skills),
-                            lastActive: Date.now()
-                        });
-                        
-                        setGameState('character-select');
-                    } catch (error) {
-                        console.error('Failed to initialize game:', error);
-                        setConnectionError(error.message);
-                        setGameState('error');
-                    }
+            const initializeGame = useCallback(async () => {
+                if (initializationRef.current) {
+                    return; // Prevent multiple initialization attempts
                 }
-                initGame();
-            }, []);
+                
+                initializationRef.current = true;
+                
+                try {
+                    setGameState('loading');
+                    setConnectionError(null);
+                    
+                    // Check if we're running in WebSim
+                    if (typeof window === 'undefined' || !window.websim) {
+                        throw new Error('This game requires WebSim environment. Please open it in WebSim.');
+                    }
+                    
+                    // Check if WebsimSocket is available
+                    if (typeof WebsimSocket === 'undefined') {
+                        throw new Error('WebsimSocket is not available. This game requires WebSim multiplayer features.');
+                    }
+                    
+                    // Get current user first
+                    if (typeof window.websim.getCurrentUser !== 'function') {
+                        throw new Error('WebSim user system is not available.');
+                    }
+                    
+                    const user = await window.websim.getCurrentUser();
+                    if (!user || !user.username) {
+                        throw new Error('Unable to get user information. Please make sure you are logged into WebSim.');
+                    }
+                    setCurrentUser(user);
+                    
+                    // Initialize room with timeout
+                    const initPromise = new Promise(async (resolve, reject) => {
+                        try {
+                            room = new WebsimSocket();
+                            
+                            // Add connection event handlers
+                            let connectionTimeout = setTimeout(() => {
+                                reject(new Error('Connection timeout - unable to connect to multiplayer servers'));
+                            }, 10000); // 10 second timeout
+                            
+                            await room.initialize();
+                            clearTimeout(connectionTimeout);
+                            
+                            // Verify room is properly initialized
+                            if (!room.updatePresence || typeof room.updatePresence !== 'function') {
+                                throw new Error('WebsimSocket failed to initialize properly.');
+                            }
+                            
+                            if (!room.subscribePresence || typeof room.subscribePresence !== 'function') {
+                                throw new Error('WebsimSocket presence system failed to initialize.');
+                            }
+                            
+                            // Set up room event handlers
+                            room.subscribePresence((presence) => {
+                                multiplayerStore.updatePresence(presence);
+                            });
+                            
+                            room.subscribeRoomState((roomState) => {
+                                multiplayerStore.updateRoomState(roomState);
+                            });
+                            
+                            // Set initial presence
+                            room.updatePresence({
+                                username: user.username,
+                                location: 'downtown',
+                                health: 100,
+                                level: calculateOverallLevel(playerData.skills),
+                                lastActive: Date.now()
+                            });
+                            
+                            // Mark as connected
+                            multiplayerStore.isConnected = true;
+                            
+                            resolve();
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+                    
+                    await initPromise;
+                    
+                    setGameState('character-select');
+                    setConnectionAttempts(0);
+                    
+                } catch (error) {
+                    console.error('Failed to initialize game:', error);
+                    setConnectionError(error.message);
+                    setGameState('error');
+                    multiplayerStore.isConnected = false;
+                } finally {
+                    initializationRef.current = false;
+                }
+            }, [connectionAttempts]);
+            
+            useEffect(() => {
+                initializeGame();
+            }, [initializeGame]);
             
             const calculateOverallLevel = (skills) => {
                 const totalLevels = Object.values(skills).reduce((sum, skill) => sum + skill.level, 0);
@@ -186,13 +277,17 @@
                         skill.xpToNext = Math.floor(skill.xpToNext * 1.2);
                         
                         // Notify other players of level up
-                        if (roomInitialized && room && room.send) {
-                            room.send({
-                                type: 'levelUp',
-                                username: currentUser.username,
-                                skill: skillName,
-                                newLevel: skill.level
-                            });
+                        if (multiplayerStore.isConnected && room && room.send) {
+                            try {
+                                room.send({
+                                    type: 'levelUp',
+                                    username: currentUser.username,
+                                    skill: skillName,
+                                    newLevel: skill.level
+                                });
+                            } catch (error) {
+                                console.error('Failed to send level up notification:', error);
+                            }
                         }
                     }
                     
@@ -233,13 +328,17 @@
                 gainXP(recipe.skill, recipe.xpGain);
                 
                 // Broadcast crafting action
-                if (roomInitialized && room && room.send) {
-                    room.send({
-                        type: 'craftedItem',
-                        username: currentUser.username,
-                        item: recipe.name,
-                        location: playerData.location
-                    });
+                if (multiplayerStore.isConnected && room && room.send) {
+                    try {
+                        room.send({
+                            type: 'craftedItem',
+                            username: currentUser.username,
+                            item: recipe.name,
+                            location: playerData.location
+                        });
+                    } catch (error) {
+                        console.error('Failed to send crafting notification:', error);
+                    }
                 }
             };
             
@@ -258,24 +357,27 @@
                 
                 gainXP('scavenging', 15);
                 
-                if (roomInitialized && room && room.send) {
-                    room.send({
-                        type: 'scavenged',
-                        username: currentUser.username,
-                        item: ITEMS[foundItem].name,
-                        quantity,
-                        location: playerData.location
-                    });
+                if (multiplayerStore.isConnected && room && room.send) {
+                    try {
+                        room.send({
+                            type: 'scavenged',
+                            username: currentUser.username,
+                            item: ITEMS[foundItem].name,
+                            quantity,
+                            location: playerData.location
+                        });
+                    } catch (error) {
+                        console.error('Failed to send scavenging notification:', error);
+                    }
                 }
             };
             
             const retryConnection = () => {
-                setGameState('loading');
-                setConnectionError(null);
-                setRoomInitialized(false);
+                setConnectionAttempts(prev => prev + 1);
+                multiplayerStore.isConnected = false;
                 room = null;
-                // Trigger the useEffect to run again
-                window.location.reload();
+                initializationRef.current = false;
+                initializeGame();
             };
             
             if (gameState === 'loading') {
@@ -283,7 +385,10 @@
                     <div className="loading">
                         <div className="loading-spinner">🔄</div>
                         <div>Connecting to Urban Legends Online...</div>
-                        <div className="loading-details">Initializing multiplayer systems...</div>
+                        <div className="loading-details">
+                            {connectionAttempts > 0 && `Attempt ${connectionAttempts + 1}... `}
+                            Initializing multiplayer systems...
+                        </div>
                     </div>
                 );
             }
@@ -297,17 +402,30 @@
                                 {connectionError || 'Unable to connect to the game servers.'}
                             </div>
                             <div className="error-details">
-                                <h3>Possible issues:</h3>
+                                <h3>Common solutions:</h3>
                                 <ul>
-                                    <li>Your browser may not support WebSim multiplayer features</li>
-                                    <li>You may need to be logged into WebSim</li>
-                                    <li>Network connectivity issues</li>
-                                    <li>The game servers may be temporarily unavailable</li>
+                                    <li><strong>Make sure you're logged into WebSim</strong> - This game requires a WebSim account</li>
+                                    <li><strong>Refresh the page</strong> - Sometimes WebSim needs a fresh start</li>
+                                    <li><strong>Check your internet connection</strong> - Multiplayer features need stable connectivity</li>
+                                    <li><strong>Try opening this in a new tab/window</strong> - Browser state issues can interfere</li>
+                                    <li><strong>Clear browser cache</strong> - Old cached data might conflict</li>
                                 </ul>
+                                
+                                {connectionAttempts > 2 && (
+                                    <div className="persistent-error">
+                                        <h4>Still having issues?</h4>
+                                        <p>After {connectionAttempts + 1} attempts, the issue might be:</p>
+                                        <ul>
+                                            <li>WebSim multiplayer services are temporarily down</li>
+                                            <li>Your browser doesn't support required WebSocket features</li>
+                                            <li>Network firewall blocking WebSocket connections</li>
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
                             <div className="error-actions">
                                 <button onClick={retryConnection} className="retry-btn">
-                                    🔄 Retry Connection
+                                    🔄 Retry Connection ({connectionAttempts + 1})
                                 </button>
                                 <button onClick={() => window.location.reload()} className="refresh-btn">
                                     🔃 Refresh Page
@@ -333,6 +451,9 @@
                                 <div className="connection-status">
                                     <span className="status-indicator">🟢</span>
                                     Connected to multiplayer
+                                    <div className="connection-details">
+                                        {Object.keys(players).length} players online
+                                    </div>
                                 </div>
                             </div>
                             <button 
@@ -431,7 +552,7 @@
                         </div>
                     </div>
                     
-                    {roomInitialized && <GameFeed players={players} />}
+                    {multiplayerStore.isConnected && <GameFeed players={players} />}
                 </div>
             );
         }
@@ -634,41 +755,51 @@
             const [feedMessages, setFeedMessages] = useState([]);
             
             useEffect(() => {
-                if (!room) return;
+                if (!room || !multiplayerStore.isConnected) return;
                 
                 room.onmessage = (event) => {
-                    const data = event.data;
-                    let message = '';
-                    
-                    switch (data.type) {
-                        case 'connected':
-                            message = `🟢 ${data.username} entered the streets`;
-                            break;
-                        case 'disconnected':
-                            message = `🔴 ${data.username} left the streets`;
-                            break;
-                        case 'levelUp':
-                            message = `🎉 ${data.username} leveled up ${SKILLS[data.skill].name} to ${data.newLevel}!`;
-                            break;
-                        case 'craftedItem':
-                            message = `⚗️ ${data.username} crafted ${data.item} in ${data.location}`;
-                            break;
-                        case 'scavenged':
-                            message = `🔍 ${data.username} found ${data.quantity}x ${data.item} in ${data.location}`;
-                            break;
-                        default:
-                            return;
-                    }
-                    
-                    if (message) {
-                        setFeedMessages(prev => [...prev, {
-                            id: Date.now(),
-                            message,
-                            timestamp: new Date().toLocaleTimeString()
-                        }].slice(-10)); // Keep only last 10 messages
+                    try {
+                        const data = event.data;
+                        let message = '';
+                        
+                        switch (data.type) {
+                            case 'connected':
+                                message = `🟢 ${data.username} entered the streets`;
+                                break;
+                            case 'disconnected':
+                                message = `🔴 ${data.username} left the streets`;
+                                break;
+                            case 'levelUp':
+                                message = `🎉 ${data.username} leveled up ${SKILLS[data.skill].name} to ${data.newLevel}!`;
+                                break;
+                            case 'craftedItem':
+                                message = `⚗️ ${data.username} crafted ${data.item} in ${data.location}`;
+                                break;
+                            case 'scavenged':
+                                message = `🔍 ${data.username} found ${data.quantity}x ${data.item} in ${data.location}`;
+                                break;
+                            default:
+                                return;
+                        }
+                        
+                        if (message) {
+                            setFeedMessages(prev => [...prev, {
+                                id: Date.now() + Math.random(),
+                                message,
+                                timestamp: new Date().toLocaleTimeString()
+                            }].slice(-10)); // Keep only last 10 messages
+                        }
+                    } catch (error) {
+                        console.error('Error processing game feed message:', error);
                     }
                 };
-            }, []);
+                
+                return () => {
+                    if (room) {
+                        room.onmessage = null;
+                    }
+                };
+            }, [multiplayerStore.isConnected]);
             
             return (
                 <div className="game-feed">
