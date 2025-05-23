@@ -16,7 +16,7 @@
         const { useState, useEffect, useSyncExternalStore } = React;
         
         // Initialize WebsimSocket for multiplayer
-        const room = new WebsimSocket();
+        let room = null;
         
         // Game configuration
         const SKILLS = {
@@ -82,8 +82,9 @@
         // Game State Management
         function GameApp() {
             const [currentUser, setCurrentUser] = useState(null);
-            const [gameState, setGameState] = useState('loading'); // loading, character-select, game
+            const [gameState, setGameState] = useState('loading'); // loading, character-select, game, error
             const [roomInitialized, setRoomInitialized] = useState(false);
+            const [connectionError, setConnectionError] = useState(null);
             const [activeTab, setActiveTab] = useState('world');
             const [playerData, setPlayerData] = useState({
                 health: 100,
@@ -114,33 +115,53 @@
             useEffect(() => {
                 async function initGame() {
                     try {
-                        // Initialize room first
+                        setGameState('loading');
+                        setConnectionError(null);
+                        
+                        // Check if WebsimSocket is available
+                        if (typeof WebsimSocket === 'undefined') {
+                            throw new Error('WebsimSocket is not available. This game requires WebSim multiplayer features.');
+                        }
+                        
+                        // Get current user first
+                        if (!window.websim || typeof window.websim.getCurrentUser !== 'function') {
+                            throw new Error('WebSim user system is not available.');
+                        }
+                        
+                        const user = await window.websim.getCurrentUser();
+                        if (!user || !user.username) {
+                            throw new Error('Unable to get user information.');
+                        }
+                        setCurrentUser(user);
+                        
+                        // Initialize room
+                        room = new WebsimSocket();
                         await room.initialize();
                         
                         // Wait a moment for room to be fully ready
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 500));
                         
-                        // Get current user
-                        const user = await window.websim.getCurrentUser();
-                        setCurrentUser(user);
+                        // Verify room is properly initialized
+                        if (!room.updatePresence || typeof room.updatePresence !== 'function') {
+                            throw new Error('WebsimSocket failed to initialize properly.');
+                        }
                         
                         // Set room as initialized
                         setRoomInitialized(true);
                         
                         // Set initial presence
-                        if (room.updatePresence) {
-                            room.updatePresence({
-                                username: user.username,
-                                location: 'downtown',
-                                health: 100,
-                                level: calculateOverallLevel(playerData.skills),
-                                lastActive: Date.now()
-                            });
-                        }
+                        room.updatePresence({
+                            username: user.username,
+                            location: 'downtown',
+                            health: 100,
+                            level: calculateOverallLevel(playerData.skills),
+                            lastActive: Date.now()
+                        });
                         
                         setGameState('character-select');
                     } catch (error) {
                         console.error('Failed to initialize game:', error);
+                        setConnectionError(error.message);
                         setGameState('error');
                     }
                 }
@@ -165,7 +186,7 @@
                         skill.xpToNext = Math.floor(skill.xpToNext * 1.2);
                         
                         // Notify other players of level up
-                        if (roomInitialized && room.send) {
+                        if (roomInitialized && room && room.send) {
                             room.send({
                                 type: 'levelUp',
                                 username: currentUser.username,
@@ -212,7 +233,7 @@
                 gainXP(recipe.skill, recipe.xpGain);
                 
                 // Broadcast crafting action
-                if (roomInitialized && room.send) {
+                if (roomInitialized && room && room.send) {
                     room.send({
                         type: 'craftedItem',
                         username: currentUser.username,
@@ -237,7 +258,7 @@
                 
                 gainXP('scavenging', 15);
                 
-                if (roomInitialized && room.send) {
+                if (roomInitialized && room && room.send) {
                     room.send({
                         type: 'scavenged',
                         username: currentUser.username,
@@ -248,15 +269,54 @@
                 }
             };
             
+            const retryConnection = () => {
+                setGameState('loading');
+                setConnectionError(null);
+                setRoomInitialized(false);
+                room = null;
+                // Trigger the useEffect to run again
+                window.location.reload();
+            };
+            
             if (gameState === 'loading') {
-                return <div className="loading">Connecting to Urban Legends Online...</div>;
+                return (
+                    <div className="loading">
+                        <div className="loading-spinner">🔄</div>
+                        <div>Connecting to Urban Legends Online...</div>
+                        <div className="loading-details">Initializing multiplayer systems...</div>
+                    </div>
+                );
             }
             
             if (gameState === 'error') {
                 return (
-                    <div className="loading">
-                        <div>❌ Connection failed</div>
-                        <button onClick={() => window.location.reload()}>Retry</button>
+                    <div className="error-screen">
+                        <div className="error-container">
+                            <h1>❌ Connection Failed</h1>
+                            <div className="error-message">
+                                {connectionError || 'Unable to connect to the game servers.'}
+                            </div>
+                            <div className="error-details">
+                                <h3>Possible issues:</h3>
+                                <ul>
+                                    <li>Your browser may not support WebSim multiplayer features</li>
+                                    <li>You may need to be logged into WebSim</li>
+                                    <li>Network connectivity issues</li>
+                                    <li>The game servers may be temporarily unavailable</li>
+                                </ul>
+                            </div>
+                            <div className="error-actions">
+                                <button onClick={retryConnection} className="retry-btn">
+                                    🔄 Retry Connection
+                                </button>
+                                <button onClick={() => window.location.reload()} className="refresh-btn">
+                                    🔃 Refresh Page
+                                </button>
+                            </div>
+                            <div className="offline-note">
+                                <p><strong>Note:</strong> This is a multiplayer-only prototype. Single-player mode is not available.</p>
+                            </div>
+                        </div>
                     </div>
                 );
             }
@@ -270,6 +330,10 @@
                                 <img src={`https://images.websim.com/avatar/${currentUser.username}`} alt="Avatar" />
                                 <h2>Welcome, {currentUser.username}</h2>
                                 <p>Enter the gritty streets where reputation is everything</p>
+                                <div className="connection-status">
+                                    <span className="status-indicator">🟢</span>
+                                    Connected to multiplayer
+                                </div>
                             </div>
                             <button 
                                 className="enter-game-btn"
@@ -295,6 +359,7 @@
                             </div>
                         </div>
                         <div className="online-players">
+                            <span className="status-indicator">🟢</span>
                             👥 {Object.keys(players).length} online
                         </div>
                     </div>
