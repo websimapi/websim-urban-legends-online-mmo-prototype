@@ -50,6 +50,35 @@
             }
         };
         
+        // Safe subscription functions that handle undefined room states
+        const safeSubscribePresence = (callback) => {
+            if (room && room.subscribePresence && typeof room.subscribePresence === 'function') {
+                return room.subscribePresence(callback);
+            }
+            return () => {}; // Return empty unsubscribe function
+        };
+        
+        const safeGetPresence = () => {
+            if (room && room.presence) {
+                return room.presence;
+            }
+            return {};
+        };
+        
+        const safeSubscribeRoomState = (callback) => {
+            if (room && room.subscribeRoomState && typeof room.subscribeRoomState === 'function') {
+                return room.subscribeRoomState(callback);
+            }
+            return () => {};
+        };
+        
+        const safeGetRoomState = () => {
+            if (room && room.roomState) {
+                return room.roomState;
+            }
+            return {};
+        };
+        
         // Game State Management
         function GameApp() {
             const [currentUser, setCurrentUser] = useState(null);
@@ -73,33 +102,43 @@
             
             // Safe multiplayer state - only subscribe after room is initialized
             const players = useSyncExternalStore(
-                roomInitialized ? room.subscribePresence : () => () => {},
-                roomInitialized ? () => room.presence || {} : () => ({})
+                roomInitialized ? safeSubscribePresence : () => () => {},
+                roomInitialized ? safeGetPresence : () => ({})
             );
             
             const worldState = useSyncExternalStore(
-                roomInitialized ? room.subscribeRoomState : () => () => {},
-                roomInitialized ? () => room.roomState || {} : () => ({})
+                roomInitialized ? safeSubscribeRoomState : () => () => {},
+                roomInitialized ? safeGetRoomState : () => ({})
             );
             
             useEffect(() => {
                 async function initGame() {
                     try {
+                        // Initialize room first
                         await room.initialize();
-                        setRoomInitialized(true);
                         
+                        // Wait a moment for room to be fully ready
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
+                        // Get current user
                         const user = await window.websim.getCurrentUser();
                         setCurrentUser(user);
-                        setGameState('character-select');
+                        
+                        // Set room as initialized
+                        setRoomInitialized(true);
                         
                         // Set initial presence
-                        room.updatePresence({
-                            username: user.username,
-                            location: 'downtown',
-                            health: 100,
-                            level: calculateOverallLevel(playerData.skills),
-                            lastActive: Date.now()
-                        });
+                        if (room.updatePresence) {
+                            room.updatePresence({
+                                username: user.username,
+                                location: 'downtown',
+                                health: 100,
+                                level: calculateOverallLevel(playerData.skills),
+                                lastActive: Date.now()
+                            });
+                        }
+                        
+                        setGameState('character-select');
                     } catch (error) {
                         console.error('Failed to initialize game:', error);
                         setGameState('error');
@@ -126,7 +165,7 @@
                         skill.xpToNext = Math.floor(skill.xpToNext * 1.2);
                         
                         // Notify other players of level up
-                        if (roomInitialized) {
+                        if (roomInitialized && room.send) {
                             room.send({
                                 type: 'levelUp',
                                 username: currentUser.username,
@@ -173,7 +212,7 @@
                 gainXP(recipe.skill, recipe.xpGain);
                 
                 // Broadcast crafting action
-                if (roomInitialized) {
+                if (roomInitialized && room.send) {
                     room.send({
                         type: 'craftedItem',
                         username: currentUser.username,
@@ -198,7 +237,7 @@
                 
                 gainXP('scavenging', 15);
                 
-                if (roomInitialized) {
+                if (roomInitialized && room.send) {
                     room.send({
                         type: 'scavenged',
                         username: currentUser.username,
@@ -530,6 +569,8 @@
             const [feedMessages, setFeedMessages] = useState([]);
             
             useEffect(() => {
+                if (!room) return;
+                
                 room.onmessage = (event) => {
                     const data = event.data;
                     let message = '';
