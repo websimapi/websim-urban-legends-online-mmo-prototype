@@ -1,0 +1,659 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    color: #fff;
+    min-height: 100vh;
+}
+
+.loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-size: 1.5rem;
+    color: #00ff00;
+}
+
+.character-select {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23333"/><path d="M0 0l100 100M100 0L0 100" stroke="%23444" stroke-width="0.5"/></svg>');
+}
+
+.character-panel {
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid #00ff00;
+    border-radius: 10px;
+    padding: 3rem;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+}
+
+.character-panel h1 {
+    color: #00ff00;
+    margin-bottom: 2rem;
+    font-size: 2.5rem;
+    text-shadow: 0 0 10px #00ff00;
+}
+
+.character-info img {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 3px solid #00ff00;
+    margin-bottom: 1rem;
+}
+
+.character-info h2 {
+    margin-bottom: 1rem;
+    color: #fff;
+}
+
+.character-info p {
+    color: #ccc;
+    margin-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.enter-game-btn {
+    background: linear-gradient(45deg, #00ff00, #00cc00);
+    color: #000;
+    border: none;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+}
+
+.enter-game-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 255, 0, 0.3);
+}
+
+.game-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.game-header {
+    background: rgba(0, 0, 0, 0.9);
+    border-bottom: 2px solid #00ff00;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.player-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 2px solid #00ff00;
+}
+
+.username {
+    font-weight: bold;
+    color: #00ff00;
+    font-size: 1.2rem;
+}
+
+.stats {
+    color: #ccc;
+    font-size: 0.9rem;
+}
+
+.online-players {
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.game-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 200px;
+    background: rgba(0, 0, 0, 0.8);
+    border-right: 2px solid #333;
+    padding: 1rem 0;
+}
+
+.tab-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tab-buttons button {
+    background: transparent;
+    color: #ccc;
+    border: none;
+    padding: 1rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+    border-left: 3px solid transparent;
+}
+
+.tab-buttons button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.tab-buttons button.active {
+    background: rgba(0, 255, 0, 0.1);
+    color: #00ff00;
+    border-left-color: #00ff00;
+}
+
+.main-content {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.world-view h2 {
+    color: #00ff00;
+    margin-bottom: 1rem;
+    font-size: 2rem;
+}
+
+.location-description {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1rem;
+    border-radius: 5px;
+    margin-bottom: 2rem;
+    line-height: 1.6;
+    color: #ccc;
+    border-left: 4px solid #00ff00;
+}
+
+.world-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.action-card {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.action-card:hover {
+    border-color: #00ff00;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 255, 0, 0.2);
+}
+
+.action-card h3 {
+    color: #00ff00;
+    margin-bottom: 0.5rem;
+}
+
+.action-card p {
+    color: #ccc;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+}
+
+.action-btn {
+    background: linear-gradient(45deg, #00ff00, #00cc00);
+    color: #000;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.action-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 255, 0, 0.3);
+}
+
+.action-btn:disabled {
+    background: #666;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.players-nearby {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.players-nearby h3 {
+    color: #00ff00;
+    margin-bottom: 1rem;
+}
+
+.nearby-player {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+}
+
+.nearby-player img {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid #00ff00;
+}
+
+.you-marker {
+    color: #00ff00;
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+
+.skills-view h2 {
+    color: #00ff00;
+    margin-bottom: 2rem;
+    font-size: 2rem;
+}
+
+.skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.skill-card {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.skill-card:hover {
+    border-color: #00ff00;
+    transform: translateY(-2px);
+}
+
+.skill-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.skill-icon {
+    font-size: 2rem;
+}
+
+.skill-name {
+    font-weight: bold;
+    color: #fff;
+    font-size: 1.1rem;
+}
+
+.skill-level {
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.skill-progress {
+    margin-bottom: 0.5rem;
+}
+
+.progress-bar {
+    background: #333;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+    background: linear-gradient(90deg, #00ff00, #00cc00);
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.progress-text {
+    font-size: 0.8rem;
+    color: #ccc;
+}
+
+.skill-category {
+    color: #666;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.inventory-view h2 {
+    color: #00ff00;
+    margin-bottom: 2rem;
+    font-size: 2rem;
+}
+
+.inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.inventory-item {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.inventory-item:hover {
+    border-color: #00ff00;
+    transform: translateY(-2px);
+}
+
+.item-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.item-name {
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 0.25rem;
+}
+
+.item-quantity {
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.item-value {
+    color: #ccc;
+    font-size: 0.8rem;
+}
+
+.empty-inventory {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 2rem;
+}
+
+.crafting-view h2 {
+    color: #00ff00;
+    margin-bottom: 2rem;
+    font-size: 2rem;
+}
+
+.recipes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.recipe-card {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.recipe-card.craftable {
+    border-color: #00ff00;
+}
+
+.recipe-card.not-craftable {
+    border-color: #666;
+    opacity: 0.7;
+}
+
+.recipe-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.recipe-icon {
+    font-size: 2rem;
+}
+
+.recipe-name {
+    font-weight: bold;
+    color: #fff;
+    font-size: 1.2rem;
+}
+
+.recipe-skill {
+    color: #00ff00;
+    font-size: 0.9rem;
+}
+
+.recipe-ingredients {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+}
+
+.ingredient {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    color: #ccc;
+}
+
+.have-count.enough {
+    color: #00ff00;
+}
+
+.have-count.not-enough {
+    color: #ff6666;
+}
+
+.recipe-result {
+    margin-bottom: 1rem;
+    color: #ccc;
+}
+
+.craft-btn {
+    background: linear-gradient(45deg, #00ff00, #00cc00);
+    color: #000;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.craft-btn:disabled {
+    background: #666;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.players-view h2 {
+    color: #00ff00;
+    margin-bottom: 2rem;
+    font-size: 2rem;
+}
+
+.players-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.player-card {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.3s ease;
+}
+
+.player-card:hover {
+    border-color: #00ff00;
+    transform: translateY(-1px);
+}
+
+.player-card img {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 2px solid #00ff00;
+}
+
+.player-details {
+    flex: 1;
+}
+
+.player-name {
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 0.25rem;
+}
+
+.player-stats {
+    color: #00ff00;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.player-status {
+    color: #ccc;
+    font-size: 0.8rem;
+}
+
+.last-active {
+    color: #666;
+}
+
+.game-feed {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    width: 300px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid #00ff00;
+    border-radius: 8px;
+    padding: 1rem;
+    max-height: 200px;
+    z-index: 1000;
+}
+
+.game-feed h3 {
+    color: #00ff00;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+.feed-messages {
+    overflow-y: auto;
+    max-height: 140px;
+}
+
+.feed-message {
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.timestamp {
+    color: #666;
+    margin-right: 0.5rem;
+}
+
+.message {
+    color: #ccc;
+}
+
+.no-messages {
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem 0;
+}
+
+@media (max-width: 768px) {
+    .game-content {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        max-height: 60px;
+        overflow-x: auto;
+    }
+    
+    .tab-buttons {
+        flex-direction: row;
+        white-space: nowrap;
+    }
+    
+    .tab-buttons button {
+        min-width: 120px;
+    }
+    
+    .game-feed {
+        position: relative;
+        bottom: auto;
+        right: auto;
+        width: 100%;
+        margin: 1rem;
+    }
+    
+    .world-actions {
+        grid-template-columns: 1fr;
+    }
+    
+    .skills-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .inventory-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+}
+

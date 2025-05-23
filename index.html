@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Legends Online - MMO Prototype</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useSyncExternalStore } = React;
+        
+        // Initialize WebsimSocket for multiplayer
+        const room = new WebsimSocket();
+        
+        // Game configuration
+        const SKILLS = {
+            marksmanship: { name: 'Marksmanship', icon: '🎯', category: 'Combat' },
+            streetFighting: { name: 'Street Fighting', icon: '👊', category: 'Combat' },
+            drugCrafting: { name: 'Drug Crafting', icon: '⚗️', category: 'Utility' },
+            mechanics: { name: 'Mechanics', icon: '🔧', category: 'Utility' },
+            scavenging: { name: 'Scavenging', icon: '🔍', category: 'Gathering' },
+            hacking: { name: 'Hacking', icon: '💻', category: 'Gathering' },
+            streetRep: { name: 'Street Rep', icon: '⭐', category: 'Social' }
+        };
+        
+        const ITEMS = {
+            bakingSoda: { name: 'Baking Soda', icon: '🧂', type: 'material', value: 5 },
+            baggies: { name: 'Baggies', icon: '💊', type: 'material', value: 2 },
+            chemicalX: { name: 'Chemical X', icon: '🧪', type: 'material', value: 15 },
+            streetDrugs: { name: 'Street Drugs', icon: '💉', type: 'product', value: 50 },
+            scrapMetal: { name: 'Scrap Metal', icon: '🔩', type: 'material', value: 8 },
+            lockpick: { name: 'Lockpick', icon: '🗝️', type: 'tool', value: 25 },
+            pistol: { name: 'Pistol', icon: '🔫', type: 'weapon', value: 200 }
+        };
+        
+        const CRAFTING_RECIPES = {
+            streetDrugs: {
+                name: 'Street Drugs',
+                ingredients: { bakingSoda: 2, chemicalX: 1, baggies: 3 },
+                skill: 'drugCrafting',
+                xpGain: 25,
+                result: 'streetDrugs',
+                quantity: 5
+            }
+        };
+        
+        // Game State Management
+        function GameApp() {
+            const [currentUser, setCurrentUser] = useState(null);
+            const [gameState, setGameState] = useState('loading'); // loading, character-select, game
+            const [activeTab, setActiveTab] = useState('world');
+            const [playerData, setPlayerData] = useState({
+                health: 100,
+                money: 100,
+                skills: Object.keys(SKILLS).reduce((acc, skill) => {
+                    acc[skill] = { level: 1, xp: 0, xpToNext: 100 };
+                    return acc;
+                }, {}),
+                inventory: {
+                    bakingSoda: 3,
+                    baggies: 5,
+                    chemicalX: 1
+                },
+                location: 'downtown'
+            });
+            
+            // Multiplayer state
+            const players = useSyncExternalStore(
+                room.subscribePresence,
+                () => room.presence || {}
+            );
+            
+            const worldState = useSyncExternalStore(
+                room.subscribeRoomState,
+                () => room.roomState || {}
+            );
+            
+            useEffect(() => {
+                async function initGame() {
+                    try {
+                        await room.initialize();
+                        const user = await window.websim.getCurrentUser();
+                        setCurrentUser(user);
+                        setGameState('character-select');
+                        
+                        // Set initial presence
+                        room.updatePresence({
+                            username: user.username,
+                            location: 'downtown',
+                            health: 100,
+                            level: calculateOverallLevel(playerData.skills),
+                            lastActive: Date.now()
+                        });
+                    } catch (error) {
+                        console.error('Failed to initialize game:', error);
+                    }
+                }
+                initGame();
+            }, []);
+            
+            const calculateOverallLevel = (skills) => {
+                const totalLevels = Object.values(skills).reduce((sum, skill) => sum + skill.level, 0);
+                return Math.floor(totalLevels / Object.keys(skills).length);
+            };
+            
+            const gainXP = (skillName, amount) => {
+                setPlayerData(prev => {
+                    const newSkills = { ...prev.skills };
+                    const skill = newSkills[skillName];
+                    skill.xp += amount;
+                    
+                    // Level up check
+                    while (skill.xp >= skill.xpToNext) {
+                        skill.xp -= skill.xpToNext;
+                        skill.level += 1;
+                        skill.xpToNext = Math.floor(skill.xpToNext * 1.2);
+                        
+                        // Notify other players of level up
+                        room.send({
+                            type: 'levelUp',
+                            username: currentUser.username,
+                            skill: skillName,
+                            newLevel: skill.level
+                        });
+                    }
+                    
+                    return { ...prev, skills: newSkills };
+                });
+            };
+            
+            const craftItem = (recipeKey) => {
+                const recipe = CRAFTING_RECIPES[recipeKey];
+                if (!recipe) return;
+                
+                // Check if player has ingredients
+                for (const [ingredient, needed] of Object.entries(recipe.ingredients)) {
+                    if ((playerData.inventory[ingredient] || 0) < needed) {
+                        alert(`Not enough ${ITEMS[ingredient].name}`);
+                        return;
+                    }
+                }
+                
+                // Consume ingredients and create product
+                setPlayerData(prev => {
+                    const newInventory = { ...prev.inventory };
+                    
+                    // Remove ingredients
+                    for (const [ingredient, needed] of Object.entries(recipe.ingredients)) {
+                        newInventory[ingredient] -= needed;
+                        if (newInventory[ingredient] <= 0) {
+                            delete newInventory[ingredient];
+                        }
+                    }
+                    
+                    // Add product
+                    newInventory[recipe.result] = (newInventory[recipe.result] || 0) + recipe.quantity;
+                    
+                    return { ...prev, inventory: newInventory };
+                });
+                
+                gainXP(recipe.skill, recipe.xpGain);
+                
+                // Broadcast crafting action
+                room.send({
+                    type: 'craftedItem',
+                    username: currentUser.username,
+                    item: recipe.name,
+                    location: playerData.location
+                });
+            };
+            
+            const scavengeLocation = () => {
+                const lootTable = ['bakingSoda', 'baggies', 'scrapMetal'];
+                const foundItem = lootTable[Math.floor(Math.random() * lootTable.length)];
+                const quantity = Math.floor(Math.random() * 3) + 1;
+                
+                setPlayerData(prev => ({
+                    ...prev,
+                    inventory: {
+                        ...prev.inventory,
+                        [foundItem]: (prev.inventory[foundItem] || 0) + quantity
+                    }
+                }));
+                
+                gainXP('scavenging', 15);
+                
+                room.send({
+                    type: 'scavenged',
+                    username: currentUser.username,
+                    item: ITEMS[foundItem].name,
+                    quantity,
+                    location: playerData.location
+                });
+            };
+            
+            if (gameState === 'loading') {
+                return <div className="loading">Connecting to Urban Legends Online...</div>;
+            }
+            
+            if (gameState === 'character-select') {
+                return (
+                    <div className="character-select">
+                        <div className="character-panel">
+                            <h1>🏙️ Urban Legends Online</h1>
+                            <div className="character-info">
+                                <img src={`https://images.websim.com/avatar/${currentUser.username}`} alt="Avatar" />
+                                <h2>Welcome, {currentUser.username}</h2>
+                                <p>Enter the gritty streets where reputation is everything</p>
+                            </div>
+                            <button 
+                                className="enter-game-btn"
+                                onClick={() => setGameState('game')}
+                            >
+                                Enter the Streets
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            
+            return (
+                <div className="game-container">
+                    <div className="game-header">
+                        <div className="player-info">
+                            <img src={`https://images.websim.com/avatar/${currentUser.username}`} alt="Avatar" className="player-avatar" />
+                            <div>
+                                <div className="username">{currentUser.username}</div>
+                                <div className="stats">
+                                    💰 ${playerData.money} | ❤️ {playerData.health}/100 | 📍 {playerData.location}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="online-players">
+                            👥 {Object.keys(players).length} online
+                        </div>
+                    </div>
+                    
+                    <div className="game-content">
+                        <div className="sidebar">
+                            <div className="tab-buttons">
+                                <button 
+                                    className={activeTab === 'world' ? 'active' : ''}
+                                    onClick={() => setActiveTab('world')}
+                                >
+                                    🌆 World
+                                </button>
+                                <button 
+                                    className={activeTab === 'skills' ? 'active' : ''}
+                                    onClick={() => setActiveTab('skills')}
+                                >
+                                    📊 Skills
+                                </button>
+                                <button 
+                                    className={activeTab === 'inventory' ? 'active' : ''}
+                                    onClick={() => setActiveTab('inventory')}
+                                >
+                                    🎒 Inventory
+                                </button>
+                                <button 
+                                    className={activeTab === 'crafting' ? 'active' : ''}
+                                    onClick={() => setActiveTab('crafting')}
+                                >
+                                    ⚗️ Crafting
+                                </button>
+                                <button 
+                                    className={activeTab === 'players' ? 'active' : ''}
+                                    onClick={() => setActiveTab('players')}
+                                >
+                                    👥 Players
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="main-content">
+                            {activeTab === 'world' && (
+                                <WorldView 
+                                    playerData={playerData}
+                                    onScavenge={scavengeLocation}
+                                    players={players}
+                                    currentUser={currentUser}
+                                />
+                            )}
+                            
+                            {activeTab === 'skills' && (
+                                <SkillsView skills={playerData.skills} />
+                            )}
+                            
+                            {activeTab === 'inventory' && (
+                                <InventoryView inventory={playerData.inventory} />
+                            )}
+                            
+                            {activeTab === 'crafting' && (
+                                <CraftingView 
+                                    inventory={playerData.inventory}
+                                    onCraft={craftItem}
+                                />
+                            )}
+                            
+                            {activeTab === 'players' && (
+                                <PlayersView players={players} currentUser={currentUser} />
+                            )}
+                        </div>
+                    </div>
+                    
+                    <GameFeed players={players} />
+                </div>
+            );
+        }
+        
+        function WorldView({ playerData, onScavenge, players, currentUser }) {
+            return (
+                <div className="world-view">
+                    <h2>🏙️ Downtown Streets</h2>
+                    <div className="location-description">
+                        The concrete jungle where fortunes are made and lost. Abandoned buildings line the streets, 
+                        perfect for scavenging materials. Stay alert - other players might be watching.
+                    </div>
+                    
+                    <div className="world-actions">
+                        <div className="action-card">
+                            <h3>🗑️ Scavenge Trash Bins</h3>
+                            <p>Search for materials in the urban wasteland</p>
+                            <button onClick={onScavenge} className="action-btn">
+                                Scavenge Area
+                            </button>
+                        </div>
+                        
+                        <div className="action-card">
+                            <h3>🏪 Pawn Shop</h3>
+                            <p>Buy basic equipment and sell your goods</p>
+                            <button className="action-btn" disabled>
+                                Coming Soon
+                            </button>
+                        </div>
+                        
+                        <div className="action-card">
+                            <h3>🎯 Shooting Range</h3>
+                            <p>Train your marksmanship skill</p>
+                            <button className="action-btn" disabled>
+                                Coming Soon
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className="players-nearby">
+                        <h3>Players in this area:</h3>
+                        {Object.entries(players)
+                            .filter(([id, player]) => player.location === playerData.location)
+                            .map(([id, player]) => (
+                                <div key={id} className="nearby-player">
+                                    <img src={`https://images.websim.com/avatar/${player.username}`} alt={player.username} />
+                                    <span>{player.username} (Lvl {player.level})</span>
+                                    {player.username === currentUser.username && <span className="you-marker">(You)</span>}
+                                </div>
+                            ))
+                        }
+                    </div>
+                </div>
+            );
+        }
+        
+        function SkillsView({ skills }) {
+            return (
+                <div className="skills-view">
+                    <h2>📊 Skills</h2>
+                    <div className="skills-grid">
+                        {Object.entries(skills).map(([skillKey, skill]) => (
+                            <div key={skillKey} className="skill-card">
+                                <div className="skill-header">
+                                    <span className="skill-icon">{SKILLS[skillKey].icon}</span>
+                                    <div>
+                                        <div className="skill-name">{SKILLS[skillKey].name}</div>
+                                        <div className="skill-level">Level {skill.level}</div>
+                                    </div>
+                                </div>
+                                <div className="skill-progress">
+                                    <div className="progress-bar">
+                                        <div 
+                                            className="progress-fill"
+                                            style={{ width: `${(skill.xp / skill.xpToNext) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className="progress-text">
+                                        {skill.xp} / {skill.xpToNext} XP
+                                    </div>
+                                </div>
+                                <div className="skill-category">{SKILLS[skillKey].category}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        
+        function InventoryView({ inventory }) {
+            return (
+                <div className="inventory-view">
+                    <h2>🎒 Inventory</h2>
+                    <div className="inventory-grid">
+                        {Object.entries(inventory).map(([itemKey, quantity]) => (
+                            <div key={itemKey} className="inventory-item">
+                                <div className="item-icon">{ITEMS[itemKey].icon}</div>
+                                <div className="item-info">
+                                    <div className="item-name">{ITEMS[itemKey].name}</div>
+                                    <div className="item-quantity">x{quantity}</div>
+                                    <div className="item-value">${ITEMS[itemKey].value * quantity}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {Object.keys(inventory).length === 0 && (
+                        <div className="empty-inventory">
+                            Your inventory is empty. Try scavenging for materials!
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        function CraftingView({ inventory, onCraft }) {
+            return (
+                <div className="crafting-view">
+                    <h2>⚗️ Crafting</h2>
+                    <div className="recipes-list">
+                        {Object.entries(CRAFTING_RECIPES).map(([recipeKey, recipe]) => {
+                            const canCraft = Object.entries(recipe.ingredients).every(
+                                ([ingredient, needed]) => (inventory[ingredient] || 0) >= needed
+                            );
+                            
+                            return (
+                                <div key={recipeKey} className={`recipe-card ${canCraft ? 'craftable' : 'not-craftable'}`}>
+                                    <div className="recipe-header">
+                                        <span className="recipe-icon">{ITEMS[recipe.result].icon}</span>
+                                        <div>
+                                            <div className="recipe-name">{recipe.name}</div>
+                                            <div className="recipe-skill">
+                                                {SKILLS[recipe.skill].icon} {SKILLS[recipe.skill].name} (+{recipe.xpGain} XP)
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="recipe-ingredients">
+                                        <strong>Requires:</strong>
+                                        {Object.entries(recipe.ingredients).map(([ingredient, needed]) => (
+                                            <div key={ingredient} className="ingredient">
+                                                {ITEMS[ingredient].icon} {needed}x {ITEMS[ingredient].name}
+                                                <span className={`have-count ${(inventory[ingredient] || 0) >= needed ? 'enough' : 'not-enough'}`}>
+                                                    ({inventory[ingredient] || 0} owned)
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    <div className="recipe-result">
+                                        <strong>Creates:</strong> {recipe.quantity}x {recipe.name}
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => onCraft(recipeKey)}
+                                        disabled={!canCraft}
+                                        className="craft-btn"
+                                    >
+                                        {canCraft ? 'Craft Item' : 'Missing Materials'}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+        
+        function PlayersView({ players, currentUser }) {
+            return (
+                <div className="players-view">
+                    <h2>👥 Online Players ({Object.keys(players).length})</h2>
+                    <div className="players-list">
+                        {Object.entries(players).map(([id, player]) => (
+                            <div key={id} className="player-card">
+                                <img src={`https://images.websim.com/avatar/${player.username}`} alt={player.username} />
+                                <div className="player-details">
+                                    <div className="player-name">
+                                        {player.username}
+                                        {player.username === currentUser.username && <span className="you-marker">(You)</span>}
+                                    </div>
+                                    <div className="player-stats">
+                                        Level {player.level} | 📍 {player.location}
+                                    </div>
+                                    <div className="player-status">
+                                        ❤️ {player.health}/100 | 
+                                        <span className="last-active">
+                                            {Math.floor((Date.now() - player.lastActive) / 1000)}s ago
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        
+        function GameFeed({ players }) {
+            const [feedMessages, setFeedMessages] = useState([]);
+            
+            useEffect(() => {
+                room.onmessage = (event) => {
+                    const data = event.data;
+                    let message = '';
+                    
+                    switch (data.type) {
+                        case 'connected':
+                            message = `🟢 ${data.username} entered the streets`;
+                            break;
+                        case 'disconnected':
+                            message = `🔴 ${data.username} left the streets`;
+                            break;
+                        case 'levelUp':
+                            message = `🎉 ${data.username} leveled up ${SKILLS[data.skill].name} to ${data.newLevel}!`;
+                            break;
+                        case 'craftedItem':
+                            message = `⚗️ ${data.username} crafted ${data.item} in ${data.location}`;
+                            break;
+                        case 'scavenged':
+                            message = `🔍 ${data.username} found ${data.quantity}x ${data.item} in ${data.location}`;
+                            break;
+                        default:
+                            return;
+                    }
+                    
+                    if (message) {
+                        setFeedMessages(prev => [...prev, {
+                            id: Date.now(),
+                            message,
+                            timestamp: new Date().toLocaleTimeString()
+                        }].slice(-10)); // Keep only last 10 messages
+                    }
+                };
+            }, []);
+            
+            return (
+                <div className="game-feed">
+                    <h3>📢 Game Feed</h3>
+                    <div className="feed-messages">
+                        {feedMessages.map(msg => (
+                            <div key={msg.id} className="feed-message">
+                                <span className="timestamp">{msg.timestamp}</span>
+                                <span className="message">{msg.message}</span>
+                            </div>
+                        ))}
+                        {feedMessages.length === 0 && (
+                            <div className="no-messages">No recent activity...</div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        
+        ReactDOM.render(<GameApp />, document.getElementById('root'));
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+
